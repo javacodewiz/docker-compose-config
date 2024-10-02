@@ -1,0 +1,134 @@
+version: "3"  # Specify the version of the Docker Compose file format
+
+services:  # Define the services that will be part of the application
+  mysql:  # MySQL database service
+    image: "mysql:latest"  # Use the latest MySQL image from Docker Hub
+    container_name: "commondb"  # Name the container "commondb"
+    ports:
+      - "3307:3306"  # Map port 3307 on the host to port 3306 on the container
+    healthcheck:  # Define a health check to ensure MySQL is running
+      test: ["CMD", "mysqladmin", "ping", "-h", "commondb"]  # Command to check MySQL's health
+      timeout: 10s  # Maximum time to wait for the health check to complete
+      retries: 5  # Number of retries before marking the service as unhealthy
+      interval: 10s  # Time between each health check
+    environment:  # Environment variables for MySQL configuration
+      MYSQL_ROOT_PASSWORD: root  # Set the root password for MySQL
+      MYSQL_DATABASE: microservice  # Create a database named "microservice"
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+  config-server:  # Spring Cloud Config Server service
+    image: "javacodewiz/config-server:latest"  # Use the latest config server image
+    container_name: config-server  # Name the container "config-server"
+    depends_on:  # Ensure MySQL is healthy before starting the config server
+      mysql:
+        condition: service_healthy
+    ports:
+      - "7001:7001"  # Map port 7001 on the host to port 7001 on the container
+    healthcheck:  # Define a health check for the config server
+      test: "curl --fail --silent http://localhost:7001/actuator/health/readiness | grep UP || exit 1"  # Check readiness endpoint
+      interval: 10s  # Time between health checks
+      timeout: 5s  # Maximum time to wait for the health check to complete
+      retries: 10  # Number of retries before marking the service as unhealthy
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+  eureka:  # Eureka server service for service discovery
+    image: "javacodewiz/eureka-server"  # Use the Eureka server image
+    container_name: "eureka-server"  # Name the container "eureka-server"
+    depends_on:  # Ensure the config server is running before starting Eureka
+      - config-server
+    ports:
+      - "8761:8761"  # Map port 8761 on the host to port 8761 on the container
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+  accounts:  # Accounts microservice
+    image: "javacodewiz/accounts:latest"  # Use the latest accounts microservice image
+    container_name: accounts  # Name the container "accounts"
+    depends_on:  # Ensure necessary services are running before starting this service
+      - config-server
+      - mysql
+      - eureka
+    environment:  # Environment variables for the accounts service
+      - SPRING_APPLICATION_NAME=accounts  # Name of the application
+      - SPRING_DATASOURCE_URL=jdbc:mysql://commondb:3306/microservice  # Database connection URL
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:7001  # Config server URL
+      - SPRING_PROFILES_ACTIVE=dev  # Active Spring profile
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/  # Eureka server URL
+    ports:
+      - "8001:8001"  # Map port 8001 on the host to port 8001 on the container
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+      restart_policy:  # Restart policy for the container
+        condition: on-failure  # Restart on failure
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+  cards:  # Cards microservice
+    image: "javacodewiz/cards:latest"  # Use the latest cards microservice image
+    container_name: cards  # Name the container "cards"
+    depends_on:  # Ensure necessary services are running before starting this service
+      - config-server
+      - eureka
+      - mysql
+    ports:
+      - "8003:8003"  # Map port 8003 on the host to port 8003 on the container
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+      restart_policy:  # Restart policy for the container
+        condition: on-failure  # Restart on failure
+    environment:  # Environment variables for the cards service
+      SPRING_APPLICATION_NAME: "cards"  # Name of the application
+      SPRING_DATASOURCE_URL: "jdbc:mysql://commondb:3306/microservice"  # Database connection URL
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:7001"  # Config server URL
+      SPRING_PROFILES_ACTIVE: "dev"  # Active Spring profile
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://eureka-server:8761/eureka/"  # Eureka server URL
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+  loans:  # Loans microservice
+    image: "javacodewiz/loans"  # Use the latest loans microservice image
+    container_name: loans  # Name the container "loans"
+    depends_on:  # Ensure necessary services are running before starting this service
+      - config-server
+      - eureka
+      - mysql
+    ports:
+      - "8002:8002"  # Map port 8002 on the host to port 8002 on the container
+
+    deploy:  # Deployment configuration for resource limits
+      resources:
+        limits:
+          memory: 700m  # Limit memory usage to 700MB
+      restart_policy:  # Restart policy for the container
+        condition: on-failure  # Restart on failure
+    environment:  # Environment variables for the loans service
+      SPRING_APPLICATION_NAME: "loans"  # Name of the application
+      SPRING_DATASOURCE_URL: "jdbc:mysql://commondb:3306/microservice"  # Database connection URL
+      SPRING_CONFIG_IMPORT: "optional:configserver:http://config-server:7001"  # Config server URL
+      SPRING_PROFILES_ACTIVE: "dev"  # Active Spring profile
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://eureka-server:8761/eureka/"  # Eureka server URL
+
+    networks:
+      - javacodewiz  # Connect to the "javacodewiz" network
+
+networks:  # Define custom networks
+  javacodewiz:  # Name of the network
+    driver: bridge  # Use the bridge network driver
